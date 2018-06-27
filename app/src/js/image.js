@@ -718,7 +718,6 @@ SatImage.prototype._mouseup = function(e) {
     return;
   }
   self.isMouseDown = false;
-
   if (this.sat.LabelType.useDoubleClick) {
     if (!self.selectedLabel) {
       setTimeout(function() {

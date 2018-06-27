@@ -165,6 +165,56 @@ type Item struct {
 	GroundTruth []Label `json:"groundTruth" yaml:"groundTruth"`
 }
 
+type Vertex struct {
+    Id          int                     `json:"id" yaml:"id"`
+    X           float32                 `json:"x" yaml:"x"`
+    Y           float32                 `json:"y" yaml:"y"`
+    Type        string                  `json:"type" yaml:"type"`
+}
+
+type Edge struct {
+    Id              int                 `json:"id" yaml:"id"`
+    Src             int                 `json:"src" yaml:"src"`
+    Dest            int                 `json:"dest" yaml:"dest"`
+    Type            string              `json:"type" yaml:"type"`
+    ControlPoints   []Vertex            `json:"control_points" yaml:"control_points"`
+}
+
+type Polyline struct {
+    Id              int                 `json:"id" yaml:"id"`
+    Vertices        []Vertex            `json:"vertices" yaml:"vertices"`
+    Edges           []Edge              `json:"edges" yaml:"edges"`
+}
+
+type PolylineDownloadFormat struct {
+    Vertices        [][]float32         `json:"vertices" yaml:"vertices"`
+    Types           string              `json:"types" yaml:"types"`
+}
+
+type Box2d struct {
+    X           float32                 `json:"x" yaml:"x"`
+    Y           float32                 `json:"y" yaml:"y"`
+    W           float32                 `json:"w" yaml:"w"`
+    H           float32                 `json:"h" yaml:"h"`
+}
+
+type Box2dDownloadFormat struct {
+    X1          float32                 `json:"x1" yaml:"x1"`
+    X2          float32                 `json:"x2" yaml:"x2"`
+    Y1          float32                 `json:"y1" yaml:"y1"`
+    Y2          float32                 `json:"y2" yaml:"y2"`
+}
+
+type Poly2d struct {
+    Closed      bool                     `json:"closed" yaml:"closed"`
+    Polys       []Polyline               `json:"polys" yaml:"polys"`
+}
+
+type Poly2dDownloadFormat struct {
+    Closed      bool                     `json:"closed" yaml:"closed"`
+    Polys       []PolylineDownloadFormat `json:"polys" yaml:"polys"`
+}
+
 // An annotation for an item, needs to include all possible annotation types
 type Label struct {
 	Id           int                    `json:"id" yaml:"id"`
@@ -172,7 +222,8 @@ type Label struct {
 	ParentId     int                    `json:"parentId" yaml:"parentId"`
 	ChildrenIds  []int                  `json:"childrenIds" yaml:"childrenIds"`
 	Attributes   map[string]interface{} `json:"attributes" yaml:"attributes"`
-	Data         map[string]interface{} `json:"data" yaml:"data"`
+	Box2d        Box2d                  `json:"box2d" yaml:"box2d"`
+	Poly2d       Poly2d                 `json:"poly2d" yaml:"poly2d"`
 	Keyframe     bool                   `json:"keyframe" yaml:"keyframe"`
 }
 
@@ -211,7 +262,6 @@ type DashboardContents struct {
 // Download format specifications
 type DownloadFormat struct {
 	Name            string                     `json:"name" yaml:"name"`
-	Categories      []Category                 `json:"categories" yaml:"categories"`
 	Attributes      []Attribute                `json:"attributes" yaml:"attributes"`
 	Items           []ItemDownloadFormat       `json:"items" yaml:"items"`
 }
@@ -226,9 +276,8 @@ type LabelDownloadFormat struct {
     Id              int                         `json:"id" yaml:"id"`
     Category        string                      `json:"category" yaml:"category"`
     Attributes      map[string]interface{}      `json:"attributes" yaml:"attributes"`
-    Data            map[string]interface{}      `json:"data" yaml:"data"`
-    Box2d           map[string]interface{}      `json:"box2d" yaml:"box2d"`
-    Segments2d      map[string]interface{}      `json:"segments2d" yaml:"segments2d"`
+    Box2d           Box2dDownloadFormat         `json:"box2d" yaml:"box2d"`
+    Poly2d          Poly2dDownloadFormat        `json:"poly2d" yaml:"poly2d"`
 }
 
 var floatType = reflect.TypeOf(float64(0))
@@ -243,25 +292,43 @@ func getFloat(unk interface{}) (float64, error) {
     return fv.Float(), nil
 }
 
-func parseBox2d(data map[string]interface{}) (map[string]interface{}) {
-    var box2d = map[string]interface{}{}
-    x, err := getFloat(data["x"])
-    y, err := getFloat(data["y"])
-    h, err := getFloat(data["h"])
-    w, err := getFloat(data["w"])
-    if err != nil {
-        Error.Println(err)
-    }
-    box2d["x1"] = x
-    box2d["y1"] = y
-    box2d["x2"] = x + w
-    box2d["y2"] = y + h
+func parseBox2d(_box2d Box2d) (Box2dDownloadFormat) {
+    box2d := Box2dDownloadFormat{}
+    box2d.X1 = _box2d.X
+    box2d.Y1 = _box2d.Y
+    box2d.X2 = _box2d.X + _box2d.W
+    box2d.Y2 = _box2d.Y + _box2d.H
     return box2d
 }
 
-func parseSegments2d(data map[string]interface{}) (map[string]interface{}) {
-    var segments2d = map[string]interface{}{}
-    return segments2d
+func pushVertexToDownloadFormat(vertices [][]float32, vertex Vertex) ([][]float32) {
+    xy := []float32{vertex.X, vertex.Y}
+    vertices = append(vertices, xy)
+    return vertices
+}
+
+func parsePoly2d(_poly2d Poly2d) (Poly2dDownloadFormat) {
+    poly2d := Poly2dDownloadFormat{}
+    for _, _poly := range _poly2d.Polys {
+        poly := PolylineDownloadFormat{}
+        for i, edge := range _poly.Edges {
+            poly.Vertices = pushVertexToDownloadFormat(poly.Vertices, _poly.Vertices[i])
+            poly.Types += "L"
+            if (edge.Type == "bezier") {
+                for _, c := range edge.ControlPoints {
+                    poly.Vertices = pushVertexToDownloadFormat(poly.Vertices, c)
+                    poly.Types += "C"
+                }
+            }
+            if (!_poly2d.Closed && i == len(_poly.Edges)) {
+                poly.Vertices = pushVertexToDownloadFormat(poly.Vertices, _poly.Vertices[i+1])
+                poly.Types += "L"
+            }
+        }
+        poly2d.Polys = append(poly2d.Polys, poly)
+    }
+    poly2d.Closed = _poly2d.Closed
+    return poly2d
 }
 
 type TaskURL struct {
@@ -494,7 +561,6 @@ func postSaveHandler(w http.ResponseWriter, r *http.Request) {
 		Error.Println(err)
 	}
 	assignment.SubmitTime = recordTimestamp()
-	Info.Println(assignment)
 	// TODO: don't send all events to front end, and append these events to most recent
 	submissionPath := assignment.GetSubmissionPath()
 	assignmentJson, err := json.MarshalIndent(assignment, "", "  ")
@@ -527,8 +593,8 @@ func postDownloadHandler(w http.ResponseWriter, r *http.Request) {
         Error.Println(err)
     }
     downloadFile.Name = projectToLoad.Options.Name
-    downloadFile.Categories = projectToLoad.Options.Categories
-    downloadFile.Attributes = projectToLoad.Options.Attributes
+    // downloadFile.Categories = projectToLoad.Options.Categories
+    // downloadFile.Attributes = projectToLoad.Options.Attributes
 
     // Grab the latest submissions from all tasks
     tasks := GetTasksInProject(projectName)
@@ -536,7 +602,7 @@ func postDownloadHandler(w http.ResponseWriter, r *http.Request) {
         latestSubmission := GetAssignment(projectName, strconv.Itoa(task.Index), DEFAULT_WORKER)
         for _, itemToLoad := range latestSubmission.Task.Items {
             item := ItemDownloadFormat{}
-            item.Timestamp = latestSubmission.SubmitTime
+            item.Timestamp = 10000 // to be fixed
             item.Index = itemToLoad.Index
             for _, labelId := range itemToLoad.LabelIds {
                 var labelToLoad Label
@@ -550,13 +616,11 @@ func postDownloadHandler(w http.ResponseWriter, r *http.Request) {
                 label.Id = labelId
                 label.Category = labelToLoad.CategoryPath
                 label.Attributes = labelToLoad.Attributes
-                label.Data = labelToLoad.Data
                 switch projectToLoad.Options.LabelType {
                 case "box2d":
-                    label.Box2d = parseBox2d(labelToLoad.Data)
+                    label.Box2d = parseBox2d(labelToLoad.Box2d)
                 case "segmentation":
-                    // TODO: handle seg2d here
-                    // label.Segments2d = parseSegments2d(labelToLoad.Data)
+                    label.Poly2d = parsePoly2d(labelToLoad.Poly2d)
                 }
                 item.Labels = append(item.Labels, label)
             }

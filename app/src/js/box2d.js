@@ -102,11 +102,11 @@ Box2d.prototype.releaseAsTargeted = function() {
  */
 Box2d.prototype.fromJsonVariables = function(json) {
   this.decodeBaseJsonVariables(json);
-  if (json.data) {
+  if (json.box2d) {
     // Data may be missing, e.g. if this json is actually a track.
     //   In that case, this is later rectified by the decodeBaseJson of
     //   VideoSat.
-    this.rect.setRect(json.data.x, json.data.y, json.data.w, json.data.h);
+    this.rect.setRect(json.box2d.x, json.box2d.y, json.box2d.w, json.box2d.h);
   }
 };
 
@@ -116,7 +116,7 @@ Box2d.prototype.fromJsonVariables = function(json) {
  */
 Box2d.prototype.toJson = function() {
   let json = this.encodeBaseJson();
-  json.data = {
+  json.box2d = {
     x: this.rect.x,
     y: this.rect.y,
     w: this.rect.w,
